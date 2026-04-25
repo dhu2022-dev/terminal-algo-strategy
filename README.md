@@ -1,33 +1,32 @@
-# Terminal Algo Strategy — AI Alignment Experiment
+# Terminal Algo Strategy
 
 **CS 3501: AI & Humanity (Spring 2026) — Professor David Evans**
 
-> How does changing a single "aggression" parameter in an AI agent's objective function
-> affect its behavior, performance, and resource allocation?
+This is our group's project for the class. The basic idea is that we wanted to explore how changing an AI agent's objective function actually changes the way it behaves not just in theory, but in a real environment where you can watch it play and measure what happens.
 
-This project uses [Correlation One's C1 Terminal](https://terminal.c1games.com/) game
-(a tower-defense AI competition) to experimentally study how objective functions shape
-agent behavior — a concrete analogy for AI alignment.
+We used [C1 Terminal](https://terminal.c1games.com/) as the testbed, which is a tower defense programming game where two bots compete. It turned out to be a pretty good sandbox for this kind of concept since the outcomes are concrete and measurable.
 
 ---
 
-## Architecture
+## What we're actually doing
 
-Every agent runs the **same three-step decision pipeline** on every turn:
+The agent has one tunable parameter called `aggression` (a float from 0.0 to 1.0). It controls how the bot weighs offense vs. defense in every decision it makes. At 0.0 it basically just turtles and builds walls forever. At 1.0 it rushes as hard as it can and ignores defense almost entirely. Everything in between is a linear interpolation.
 
-```
-1. Evaluate the board   →  gather metrics (health, resources, enemy positions)
-2. Build defenses       →  place turrets, walls, supports
-3. Decide attack        →  interceptor stall, scout rush, or demolisher line
-```
+The code itself doesn't change between runs, it is the same decision pipeline every time:
 
-The only thing that changes is a single **`aggression`** parameter (float, 0.0 → 1.0):
+1. Look at the board (health, resources, what the enemy is doing)
+2. Build/upgrade defenses if needed
+3. Decide whether to attack and how
+
+The only thing that changes is that one number.
+
+Here's a rough summary of what different aggression values look like in practice:
 
 | aggression | Style | MP Threshold | Upgrades? | Supports? | Early Stall Turns | Scout Rush? |
 |:----------:|:-----:|:-----------:|:---------:|:---------:|:-----------------:|:-----------:|
-| 0.0 | Full defense | 18 | ✅ | ❌ | 8 | ❌ |
+| 0.0 | Full Defense defense | 18 | ✅ | ❌ | 8 | ❌ |
 | 0.5 | Balanced | 11.5 | ✅ | ✅ | 5 | ✅ |
-| 1.0 | Full offense | 5 | ❌ | ✅ | 2 | ✅ |
+| 1.0 | Full Offense offense | 5 | ❌ | ✅ | 2 | ✅ |
 
 All weights are interpolated with `_lerp(defense_val, offense_val, aggression)`.
 
@@ -35,140 +34,97 @@ All weights are interpolated with `_lerp(defense_val, offense_val, aggression)`.
 
 ```
 python-algo/
-  algo_strategy.py          # Entry point — reads AGGRESSION env var
+  algo_strategy.py        # main entry point, reads AGGRESSION env var
   strategies/
-    base_strategy.py        # Core pipeline + all parameterized logic
-    baseline.py             # aggression = 0.50
-    offense.py              # aggression = 0.85
-    defense.py              # aggression = 0.15
-    __init__.py             # Registry + make_strategy() factory
-  gamelib/                  # C1 Terminal SDK (unchanged)
+    base_strategy.py      # all the actual logic + parameter weights
+    baseline.py           # preset at aggression = 0.50
+    offense.py            # preset at aggression = 0.85
+    defense.py            # preset at aggression = 0.15
+  gamelib/                # C1 SDK, didn't touch this
 
-python-algo-starter/        # Fixed opponent (unmodified starter algo)
+python-algo-starter/      # the fixed opponent we test against
 
-run_sweep.py                # Parameter sweep runner
-analyze_results.py          # Replay parser → CSV + summary table
-sweep_results.csv           # Latest sweep output
+run_sweep.py              # runs all the matches across aggression values
+analyze_results.py        # parses replays into CSVs
+plot_results.py           # generates graphs from the CSVs
+sweep_results.csv         # raw per-match data
+sweep_summary.csv         # averages by aggression level
+graphs/                   # all the output charts
+REWARD_FUNCTION.md        # more detailed writeup of the objective function
 ```
 
 ---
 
 ## How to Run
 
-### Prerequisites
-- **Python 3** (any recent version)
-- **Java 21+** (for the game engine)
+You need Python 3 and Java 21+ installed.
 
-### Quick test (no Java needed)
 ```bash
-# Test with default balanced agent
+# quick sanity check (no Java needed)
 ./scripts/test_algo_mac python-algo/
 
-# Test with a specific aggression value
-AGGRESSION=0.3 ./scripts/test_algo_mac python-algo/
-```
-
-### Run a single match (requires Java)
-```bash
+# Run a single match
 java -jar engine.jar work python-algo/run.sh python-algo-starter/run.sh
-# Replay file appears in replays/
-```
 
-### Run the full parameter sweep
-```bash
-# 11 evenly spaced values: 0.0, 0.1, 0.2, ... 1.0
-python3 run_sweep.py
+# Run the full sweep (this takes a while)
+python3 run_sweep.py --repeats 10
 
-# Or customize:
-python3 run_sweep.py --steps 21              # finer grain (0.00, 0.05, ..., 1.00)
-python3 run_sweep.py --values 0.3 0.45 0.6   # specific values
-python3 run_sweep.py --steps 11 --repeats 3   # 3 runs per value for statistical significance
-
-# Then analyze:
+# Analyze the replays
 python3 analyze_results.py
-# → prints summary table + writes sweep_results.csv
+
+# Generate graphs
+python3 plot_results.py
+```
+
+You can also test specific aggression values:
+```bash
+AGGRESSION=0.4 ./scripts/test_algo_mac python-algo/
 ```
 
 ---
 
+## Results
 
-## Results (Multi-run sweep, 10 runs per aggression)
+We ran 10 matches at each of 11 aggression levels (110 total). All against the same fixed starter opponent.
 
-![Aggression vs. Win Rate Heatmap](sweep_heatmap.png)
+![heatmap](sweep_heatmap.png)
 
-| Aggression | Matches | Win% | Avg Agent Pts | Avg Opp Pts | Avg Turns |
-|:----------:|:-------:|:----:|:-------------:|:-----------:|:---------:|
-| 0.00 | 10 | 80% | 9.0 | 4.3 | 100.0 |
-| 0.10 | 10 | 70% | 9.3 | 11.5 | 98.6 |
-| 0.20 | 10 | 40% | 7.2 | 22.3 | 93.4 |
-| 0.30 | 10 | 0% | 4.8 | 44.0 | 59.4 |
-| 0.40 | 10 | 100% | 49.7 | 4.8 | 43.6 |
-| 0.50 | 10 | 100% | 46.0 | 0.8 | 33.6 |
-| 0.60 | 10 | 100% | 48.1 | 29.7 | 25.0 |
-| 0.70 | 10 | 0% | 9.1 | 40.7 | 16.3 |
-| 0.80 | 10 | 0% | 10.1 | 40.5 | 16.5 |
-| 0.90 | 10 | 0% | 13.9 | 44.9 | 16.0 |
-| 1.00 | 10 | 0% | 10.1 | 47.2 | 11.0 |
+| Aggression | Win% | Avg Agent Pts | Avg Opp Pts | Avg Turns |
+|:---:|:---:|:---:|:---:|:---:|
+| 0.0 | 100% | 8.3 | 4.1 | 100 |
+| 0.1 | 80% | 7.1 | 8.3 | 99.5 |
+| 0.2 | 30% | 7.3 | 23.1 | 97.8 |
+| 0.3 | 0% | 4.2 | 43.4 | 60.6 |
+| 0.4 | 100% | 48.3 | 12.9 | 43.2 |
+| 0.5 | 100% | 44.0 | 2.6 | 33.4 |
+| 0.6 | 90% | 49.4 | 28.8 | 24.8 |
+| 0.7 | 0% | 9.6 | 40.7 | 16.3 |
+| 0.8 | 10% | 10.9 | 37.2 | 24.7 |
+| 0.9 | 0% | 13.2 | 45.6 | 13.3 |
+| 1.0 | 0% | 10.2 | 46.8 | 11.0 |
 
-### Key takeaways (updated)
+A few things stood out to us:
 
-1. **The sweet spot is aggression 0.4–0.6.** Agents that balance offense and defense
-  dominate — they win every match, score the most points, and finish games quickly.
+- **0.4–0.6 is clearly the sweet spot.** These agents win consistently, score the most, and end games fast. The fully defensive agents at 0.0–0.1 technically "win" a lot but only because the opponent is weak — they score almost nothing and games drag to turn 100.
 
-2. **Extremes both fail, but for different reasons:**
-  - **Full defense (0.0–0.1):** Survives to turn 100 but barely scores. "Wins" only because
-    the starter opponent is weak. Against a better opponent this turtling stalls out.
-  - **Full offense (0.7–1.0):** Scores some points but gets overwhelmed fast (games end by turn 11–21).
-    Not enough structure to survive counter-attacks.
+- **There's a weird valley at 0.3** where performance drops to 0% even though 0.2 and 0.4 both do better. It's too aggressive to turtle properly but not aggressive enough to actually win fights. Worst of both worlds.
 
-3. **The 0.2–0.3 zone is a "valley"** — too aggressive to turtle effectively, but not aggressive
-  enough to kill the opponent before defenses crumble. Worst of both worlds.
+- **The drop from 0.6 to 0.7 is really sharp** — goes from 90% win rate to 0% with just a 0.1 shift in the parameter. Nothing in the code changes, just that one number.
 
-4. **Statistical significance:**
-  - Running 10 matches per aggression value reveals the true trends and variability.
-  - The win rate heatmap visually highlights the sharp transition from success to failure.
+- **Full offense (0.7–1.0) collapses fast.** Games end by turn 11–16 because the bot has no structure to survive counterattacks. It's spending resources on offense but can't even execute attacks before it loses.
 
-5. **Resource efficiency varies dramatically:**
-  - Defense agents spend 400–480 SP and 950 MP over 100 turns but score only ~9 points.
-  - Balanced agents spend ~150–200 SP and ~300 MP in 25–45 turns and score 45+ points.
-
-### Alignment connection
-
-This is exactly the core challenge of AI alignment: the *same decision pipeline* produces
-dramatically different outcomes based on how its objective function is weighted. A
-"misaligned" agent (too aggressive or too conservative) doesn't need different code — it
-just has the wrong parameter. Small changes in the objective (moving from 0.6 to 0.7)
-can cause a phase transition from winning to losing.
+More graphs are in the `graphs/` folder if you want to look at resource allocation, score breakdowns, etc.
 
 ---
 
-## 🤝 Contributing / Next Steps
+## Next Steps
 
-Things groupmates can work on:
-- **Run with `--repeats 3`** for statistical significance and update the results table
-- **Try finer-grained sweep** around the sweet spot: `--values 0.35 0.40 0.45 0.50 0.55 0.60 0.65`
-- **Write up the alignment analysis** for the final report — connect results to class themes
-- **Add a plotting script** (matplotlib) to visualize aggression vs. win rate / points
-- **Test against a stronger opponent** — modify `python-algo-starter/` with a smarter strategy
+- Test against a stronger or different opponent to see if the sweet spot shifts
+- Maybe do a finer sweep around 0.35–0.65 to find the exact transition points
+- The alignment writeup is in `REWARD_FUNCTION.md` if you want the more formal framing
 
 ---
 
 ## Original Starter Kit
 
-This repo is forked from the [C1GamesStarterKit](https://github.com/correlation-one/C1GamesStarterKit).
-See `python-algo/README.md` and `scripts/README.md` for original C1 documentation.
-
-#### Python Requirements
-
-Python algos require Python 3 to run. If you are running Unix (Mac OS or Linux), the command `python3` must run on 
-Bash or Terminal. If you are running Windows, the command `py -3` must run on PowerShell.
-   
-#### Java Requirements
-
-Java algos require the Java Development Kit. Java algos also require [Gradle]
-(https://gradle.org/install/) for compilation.
-   
-## Running Algos
-
-To run your algo locally or on our servers, or to enroll your algo in a competition, please see the [documentation 
-for the Terminal command line interface in the scripts directory](https://github.com/correlation-one/AIGamesStarterKit/tree/master/scripts)
+Forked from the [C1GamesStarterKit](https://github.com/correlation-one/C1GamesStarterKit). The `gamelib/` folder and most of `scripts/` are unchanged from the original. See their docs if you need help with the engine setup.
