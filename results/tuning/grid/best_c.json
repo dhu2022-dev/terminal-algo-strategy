@@ -1,0 +1,7 @@
+{
+  "c_best": 0.6,
+  "avg_score_diff": 34.44,
+  "win_rate": 1.0,
+  "num_games": 9,
+  "reason": "Highest avg_score_diff (34.44) across training opponents"
+}

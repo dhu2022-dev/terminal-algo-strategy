@@ -1,0 +1,8 @@
+{
+  "c_best": 0.6,
+  "final_q_value": 28.688,
+  "win_rate": 0.906,
+  "avg_score_diff": 28.69,
+  "pulls": 32,
+  "reason": "Highest learned Q-value (28.688) after 50 episodes"
+}

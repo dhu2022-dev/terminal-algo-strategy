@@ -1,0 +1,5 @@
+c,c_label,matches,win_rate,avg_score_diff
+0.1,defensive,10,0.0,-41.0
+0.5,balanced,10,0.1,-8.6
+0.6,bandit,20,1.0,41.0
+0.9,aggressive,10,1.0,32.9

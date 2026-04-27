@@ -1,130 +1,116 @@
-# Terminal Algo Strategy
+# Terminal Algo Strategy — project overview
 
-**CS 3501: AI & Humanity (Spring 2026) — Professor David Evans**
+CS 3501: AI & Humanity (Spring 2026) — Professor David Evans
 
-This is our group's project for the class. The basic idea is that we wanted to explore how changing an AI agent's objective function actually changes the way it behaves not just in theory, but in a real environment where you can watch it play and measure what happens.
+This repository contains the code, experiments, and documentation for our group's project investigating how a single tunable objective parameter changes an agent's behavior in the C1 Terminal environment. Rather than changing the agent's implementation, we vary one scalar (called `aggression` or `c`) and run many head-to-head matches to measure the behavioural and performance effects.
 
-We used [C1 Terminal](https://terminal.c1games.com/) as the testbed, which is a tower defense programming game where two bots compete. It turned out to be a pretty good sandbox for this kind of concept since the outcomes are concrete and measurable.
+High-level goals
+- Show how small changes to an objective (single parameter) produce large, non-linear behavioral differences.
+- Produce reproducible experiments (grid search, bandit tuning, held-out testing).
+- Produce presentation-ready artifacts (figures + slide-plan) and speaker notes for a class presentation.
 
----
+Contents at-a-glance
+- `python-algo/` — the rule-based agent code. The agent reads `AGGRESSION` from the environment and uses it to interpolate strategy weights.
+- `opponents/` — small set of opponent configurations (run.sh files that set different `AGGRESSION` presets).
+- `scripts/` — helper scripts for engine integration and quick tests.
+- `tune_c_grid.py` — grid search orchestration (runs many matches, aggregates per-c metrics).
+- `tune_c_bandit.py` — epsilon-greedy bandit tuner (learns good c values online).
+- `test_selected_c.py` — held-out evaluation harness for best c candidates.
+- `plot_tuning_results.py` — generates presentation-ready PNG charts under `results/figures/`.
+- `experiment_config.json` — single source of truth for experiment parameters (c grid, opponents, games per combo).
+- `run_tuning_pipeline.sh` — orchestration script that runs the full pipeline (grid → bandit → test → plot → report).
+- `results/` — output folder (CSV, JSON, PNG) produced by the pipeline.
+- `README.md` — this file (how to run, expectations, file index, next steps).
 
-## What we're actually doing
+Why this is interesting
+- We're not training a neural network; we're systematically changing one objective scalar and showing that behavior and outcomes can change radically despite identical code paths. This produces a clean demonstration for discussions about reward design and robustness.
 
-The agent has one tunable parameter called `aggression` (a float from 0.0 to 1.0). It controls how the bot weighs offense vs. defense in every decision it makes. At 0.0 it basically just turtles and builds walls forever. At 1.0 it rushes as hard as it can and ignores defense almost entirely. Everything in between is a linear interpolation.
+Quick start — prerequisites
+- macOS or Linux, Python 3.8+, and Java (jdk 17/21+). The engine is invoked via `java -jar engine.jar`.
+- Confirm these are available before running the pipeline.
 
-The code itself doesn't change between runs, it is the same decision pipeline every time:
-
-1. Look at the board (health, resources, what the enemy is doing)
-2. Build/upgrade defenses if needed
-3. Decide whether to attack and how
-
-The only thing that changes is that one number.
-
-Here's a rough summary of what different aggression values look like in practice:
-
-| aggression | Style | MP Threshold | Upgrades? | Supports? | Early Stall Turns | Scout Rush? |
-|:----------:|:-----:|:-----------:|:---------:|:---------:|:-----------------:|:-----------:|
-| 0.0 | Full Defense defense | 18 | ✅ | ❌ | 8 | ❌ |
-| 0.5 | Balanced | 11.5 | ✅ | ✅ | 5 | ✅ |
-| 1.0 | Full Offense offense | 5 | ❌ | ✅ | 2 | ✅ |
-
-All weights are interpolated with `_lerp(defense_val, offense_val, aggression)`.
-
-### Key files
-
-```
-python-algo/
-  algo_strategy.py        # main entry point, reads AGGRESSION env var
-  strategies/
-    base_strategy.py      # all the actual logic + parameter weights
-    baseline.py           # preset at aggression = 0.50
-    offense.py            # preset at aggression = 0.85
-    defense.py            # preset at aggression = 0.15
-  gamelib/                # C1 SDK, didn't touch this
-
-python-algo-starter/      # the fixed opponent we test against
-
-run_sweep.py              # runs all the matches across aggression values
-analyze_results.py        # parses replays into CSVs
-plot_results.py           # generates graphs from the CSVs
-sweep_results.csv         # raw per-match data
-sweep_summary.csv         # averages by aggression level
-graphs/                   # all the output charts
-REWARD_FUNCTION.md        # more detailed writeup of the objective function
-```
-
----
-
-## How to Run
-
-You need Python 3 and Java 21+ installed.
-
+Sanity checks (example)
 ```bash
-# quick sanity check (no Java needed)
-./scripts/test_algo_mac python-algo/
+# confirm Python and Java
+python3 --version
+java -version
 
-# Run a single match
-java -jar engine.jar work python-algo/run.sh python-algo-starter/run.sh
-
-# Run the full sweep (this takes a while)
-python3 run_sweep.py --repeats 10
-
-# Analyze the replays
-python3 analyze_results.py
-
-# Generate graphs
-python3 plot_results.py
+# quick algorithm test script provided for mac/linux
+./scripts/test_algo_mac python-algo/   # or use test_algo_linux on Linux
 ```
 
-You can also test specific aggression values:
+Run the full automated tuning pipeline
+- This repository contains an end-to-end orchestration that executes:
+  1. Grid search over c values (writes `results/tuning/grid/`)
+ 2. Epsilon-greedy bandit tuning (writes `results/tuning/bandit/`)
+ 3. Held-out testing on specified test opponents (writes `results/testing/`)
+ 4. Plotting and figure generation (writes `results/figures/`)
+ 5. A short `experiment_summary.md` with key results and recommended slides
+
+Run it from the repository root:
 ```bash
-AGGRESSION=0.4 ./scripts/test_algo_mac python-algo/
+bash run_tuning_pipeline.sh
 ```
 
----
+Expected runtimes (rough)
+- Phase 1 — Grid search: ~60 minutes (config: 11 c values × 3 training opponents × 3 runs each in the default config). This varies with machine and engine speed.
+- Phase 2 — Bandit tuning: ~30 minutes (default: 50 episodes in epsilon-greedy).
+- Phase 3 — Testing: ~20 minutes (held-out opponents, configurable).
+- Phase 4 — Visualization: < 5 minutes.
+- Phase 5 — Summary generation: < 1 minute.
 
-## Results
+If you prefer to run a single stage (fast):
+```bash
+# Only run grid search (example)
+python3 tune_c_grid.py --config experiment_config.json
 
-We ran 10 matches at each of 11 aggression levels (110 total). All against the same fixed starter opponent.
+# Only run plotting (after results exist)
+python3 plot_tuning_results.py --results results/tuning/grid/
+```
 
-![heatmap](sweep_heatmap.png)
+Important output artifacts
+- `results/tuning/grid/tuning_results.csv` — per-match records produced by the grid search.
+- `results/tuning/grid/tuning_summary.csv` — aggregated metrics per `c`.
+- `results/tuning/grid/best_c.json` — best candidate(s) chosen from the grid stage.
+- `results/tuning/bandit/` — bandit logs, Q-values, and summaries.
+- `results/testing/test_results.csv` & `results/testing/test_summary.csv` — held-out evaluation outputs.
+- `results/figures/` — PNG charts ready to drop into slides.
+- `experiment_summary.md` — short report that the pipeline also writes for presentation use.
 
-| Aggression | Win% | Avg Agent Pts | Avg Opp Pts | Avg Turns |
-|:---:|:---:|:---:|:---:|:---:|
-| 0.0 | 100% | 8.3 | 4.1 | 100 |
-| 0.1 | 80% | 7.1 | 8.3 | 99.5 |
-| 0.2 | 30% | 7.3 | 23.1 | 97.8 |
-| 0.3 | 0% | 4.2 | 43.4 | 60.6 |
-| 0.4 | 100% | 48.3 | 12.9 | 43.2 |
-| 0.5 | 100% | 44.0 | 2.6 | 33.4 |
-| 0.6 | 90% | 49.4 | 28.8 | 24.8 |
-| 0.7 | 0% | 9.6 | 40.7 | 16.3 |
-| 0.8 | 10% | 10.9 | 37.2 | 24.7 |
-| 0.9 | 0% | 13.2 | 45.6 | 13.3 |
-| 1.0 | 0% | 10.2 | 46.8 | 11.0 |
+How matches are run (implementation notes)
+- Each agent/opponent is invoked via a small `run.sh` wrapper which sets `AGGRESSION` and then executes the Python agent: `python3 python-algo/algo_strategy.py`.
+- Matches are launched by calling the Java engine: `java -jar engine.jar work <agent1_run_sh> <agent2_run_sh>` which produces a `.replay` JSON file. The analyzer reads the last replay to extract `endStats` and aggregates metrics.
 
-A few things stood out to us:
+Metrics we track
+- Primary: average score difference (agent_score - opponent_score) — useful when games end at fixed max turns.
+- Secondary: win rate, average game length (turns), finer resource breakdowns (in per-match CSVs).
 
-- **0.4–0.6 is clearly the sweet spot.** These agents win consistently, score the most, and end games fast. The fully defensive agents at 0.0–0.1 technically "win" a lot but only because the opponent is weak — they score almost nothing and games drag to turn 100.
+File index (important files)
+- `python-algo/algo_strategy.py` — agent entry point; reads `AGGRESSION` env var and computes decisions.
+- `opponents/*/run.sh` — opponent presets (each exports `AGGRESSION` for that opponent config).
+- `experiment_config.json` — controls grid values, opponent lists, repeats, and other tuning parameters.
+- `run_tuning_pipeline.sh` — run everything (pre-flight checks + sequential phases).
+- `tune_c_grid.py`, `tune_c_bandit.py`, `test_selected_c.py`, `plot_tuning_results.py` — core pipeline scripts.
+- `results/` — where all outputs will appear.
+- `TUNING_README.md` — more detailed developer notes on tuning scripts.
 
-- **There's a weird valley at 0.3** where performance drops to 0% even though 0.2 and 0.4 both do better. It's too aggressive to turtle properly but not aggressive enough to actually win fights. Worst of both worlds.
+What to look at when the pipeline finishes
+- The single-file summaries: `results/tuning/grid/tuning_summary.csv` and `results/testing/test_summary.csv`.
+- `results/figures/` — copy the PNGs directly into slides. Typical figure names include: `winrate_by_c.png`, `score_diff_by_c.png`, `bandit_q_values.png`, `test_comparison.png`, etc.
+- `experiment_summary.md` — short summary + suggested slide order and talking points (auto-generated by the pipeline).
 
-- **The drop from 0.6 to 0.7 is really sharp** — goes from 90% win rate to 0% with just a 0.1 shift in the parameter. Nothing in the code changes, just that one number.
+Notes for collaborators / slide production
+- The pipeline creates a `experiment_summary.md` that contains a suggested slide plan and a brief script for each slide. I recommend copying that into the slide-plan document and placing the corresponding PNGs from `results/figures/` into each slide.
+- If you want me to also draft the actual slides, say so in the channel — I can create a first-pass deck with placeholders and then add speaker notes.
 
-- **Full offense (0.7–1.0) collapses fast.** Games end by turn 11–16 because the bot has no structure to survive counterattacks. It's spending resources on offense but can't even execute attacks before it loses.
+Troubleshooting
+- If the engine can't be found, make sure `engine.jar` is in the repo root or adjust the path used by `run_tuning_pipeline.sh`.
+- If replays are not being written, check the Java process output in the terminal where you ran the pipeline; the analyzer expects `endStats` in the replay JSON.
 
-More graphs are in the `graphs/` folder if you want to look at resource allocation, score breakdowns, etc.
+Next steps / roadmap
+- Run the full pipeline and inspect outputs (figures + `experiment_summary.md`).
+- If needed: run a fine-grained sweep around the discovered sweet spot (e.g., 0.35–0.65) to find transition points.
+- Prepare slides from the slide-plan doc and ask me to add comprehensive speaker notes.
 
----
-
-## Next Steps
-
-- Test against a stronger or different opponent to see if the sweet spot shifts
-- Maybe do a finer sweep around 0.35–0.65 to find the exact transition points
-- The alignment writeup is in `REWARD_FUNCTION.md` if you want the more formal framing
-
----
-
-## Original Starter Kit
-
-Forked from the [C1GamesStarterKit](https://github.com/correlation-one/C1GamesStarterKit). The `gamelib/` folder and most of `scripts/` are unchanged from the original. See their docs if you need help with the engine setup.
+License / origin
+- Forked from the [C1GamesStarterKit](https://github.com/correlation-one/C1GamesStarterKit). The `gamelib/` folder and helper scripts are adapted from their starter kit.
